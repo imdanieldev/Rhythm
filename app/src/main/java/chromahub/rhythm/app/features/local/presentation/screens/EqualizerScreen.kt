@@ -5,6 +5,10 @@
 
 package chromahub.rhythm.app.features.local.presentation.screens
 
+import chromahub.rhythm.app.infrastructure.audio.viper.ViperSettingsRepository
+import chromahub.rhythm.app.infrastructure.audio.viper.ViperMasterConfig
+import chromahub.rhythm.app.features.local.presentation.screens.equalizer.*
+
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.shared.presentation.components.icons.MaterialSymbolIcon
 import chromahub.rhythm.app.shared.presentation.components.icons.Icon
@@ -347,6 +351,9 @@ fun EqualizerScreen(
     val batterySaverMode by appSettings.batterySaverMode.collectAsState()
     val batterySaverEnableOffload by appSettings.batterySaverEnableOffload.collectAsState()
     val isOffloadEnforced = batterySaverEnabled && (batterySaverMode == "auto" || (batterySaverMode == "manual" && batterySaverEnableOffload))
+
+    val viperRepo = remember { ViperSettingsRepository.getInstance(context) }
+    val viperConfig by viperRepo.configFlow.collectAsState()
 
     // Update spatialization and bass boost availability when screen is shown
     LaunchedEffect(Unit) {
@@ -1240,6 +1247,124 @@ fun EqualizerScreen(
                     ) {
                         bassBoostCard(Modifier.weight(1f))
                         virtualizerCard(Modifier.weight(1f))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // ViPER4Android DSP Engine Master Switch Card
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (viperConfig.masterEnabled)
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                        else
+                            MaterialTheme.colorScheme.surfaceContainer
+                    ),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 14.dp)
+                    ) {
+                        Icon(
+                            imageVector = MaterialSymbolIcon("graphic_eq", filled = true),
+                            contentDescription = null,
+                            tint = if (viperConfig.masterEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "ViPER4Android DSP",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (viperConfig.masterEnabled) "Active • 24 Studio Effects" else "Disabled (Tap to enable studio audio)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = viperConfig.masterEnabled,
+                            onCheckedChange = { isChecked ->
+                                HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                                viperRepo.setMasterEnabled(isChecked)
+                            },
+                            modifier = Modifier.scale(0.85f)
+                        )
+                    }
+                }
+
+                if (viperConfig.masterEnabled) {
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    var selectedViperTab by remember { mutableIntStateOf(0) }
+                    val viperTabs = listOf("Master", "Dynamics", "Bass", "Clarity", "Spatial")
+
+                    ScrollableTabRow(
+                        selectedTabIndex = selectedViperTab,
+                        edgePadding = 0.dp,
+                        containerColor = Color.Transparent,
+                        divider = {},
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        viperTabs.forEachIndexed { index, title ->
+                            val isSelected = selectedViperTab == index
+                            Tab(
+                                selected = isSelected,
+                                onClick = {
+                                    HapticUtils.performHapticFeedback(context, haptics, HapticType.SELECTION)
+                                    selectedViperTab = index
+                                },
+                                text = {
+                                    Text(
+                                        text = title,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    when (selectedViperTab) {
+                        0 -> {
+                            ViperMasterGateCard(
+                                config = viperConfig.masterGate,
+                                onConfigChange = { newGate ->
+                                    viperRepo.updateConfig { it.copy(masterGate = newGate) }
+                                }
+                            )
+                        }
+                        1 -> {
+                            ViperDynamicsGroup(
+                                masterConfig = viperConfig,
+                                onUpdate = { viperRepo.updateConfig(it) }
+                            )
+                        }
+                        2 -> {
+                            ViperBassGroup(
+                                masterConfig = viperConfig,
+                                onUpdate = { viperRepo.updateConfig(it) }
+                            )
+                        }
+                        3 -> {
+                            ViperClarityGroup(
+                                masterConfig = viperConfig,
+                                onUpdate = { viperRepo.updateConfig(it) }
+                            )
+                        }
+                        4 -> {
+                            ViperSpatialGroup(
+                                masterConfig = viperConfig,
+                                onUpdate = { viperRepo.updateConfig(it) }
+                            )
+                        }
                     }
                 }
             }

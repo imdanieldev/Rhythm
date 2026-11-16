@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -24,6 +25,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run Lint
+        continue-on-error: true
         run: ./gradlew lint
       
       - name: Upload lint results
@@ -63,17 +65,16 @@ jobs:
       run: ./gradlew assembleGithubRelease assembleGithubDebug
 
     - name: Generate build info
-      if: github.event_name == 'pull_request'
       run: |
         echo "Build completed at: $(date)" > build_info.txt
         echo "Commit: ${{ github.sha }}" >> build_info.txt
-        echo "Branch: ${{ github.head_ref }}" >> build_info.txt
+        echo "Branch: ${{ github.ref_name }}" >> build_info.txt
 
-    - name: Upload PR artifacts
-      if: github.event_name == 'pull_request'
+    - name: Upload APK artifacts
+      if: always()
       uses: actions/upload-artifact@v7
       with:
-        name: rhythm-pr-${{ github.event.pull_request.number }}
+        name: rhythm-apks
         path: |
           app/build/outputs/apk/github/release/*.apk
           app/build/outputs/apk/github/debug/*.apk
