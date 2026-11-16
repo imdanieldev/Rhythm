@@ -1304,7 +1304,7 @@ fun EqualizerScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = if (viperConfig.masterEnabled) "Active • 24 Studio Effects" else "Disabled (Tap to enable studio audio)",
+                                text = if (viperConfig.masterEnabled) "Active • Clarity, DDC & Convolver" else "Disabled (Tap to enable studio audio)",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1323,238 +1323,30 @@ fun EqualizerScreen(
                 if (viperConfig.masterEnabled) {
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Row 1: UI Complexity Level (Simple / Moderate / Expert)
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "UI Mode (سطح رابط)",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                FilterChip(
-                                    selected = viperConfig.uiMode == ViperUiMode.SIMPLE,
-                                    onClick = { viperRepo.setUiMode(ViperUiMode.SIMPLE) },
-                                    label = { Text("Simple", style = MaterialTheme.typography.labelSmall) }
-                                )
-                                FilterChip(
-                                    selected = viperConfig.uiMode == ViperUiMode.MODERATE,
-                                    onClick = { viperRepo.setUiMode(ViperUiMode.MODERATE) },
-                                    label = { Text("Moderate", style = MaterialTheme.typography.labelSmall) }
-                                )
-                                FilterChip(
-                                    selected = viperConfig.uiMode == ViperUiMode.EXPERT,
-                                    onClick = { viperRepo.setUiMode(ViperUiMode.EXPERT) },
-                                    label = { Text("Expert", style = MaterialTheme.typography.labelSmall) }
-                                )
-                            }
+                    ViperClarityCard(
+                        config = viperConfig.viperClarity,
+                        onConfigChange = { newClarity ->
+                            viperRepo.updateConfig { it.copy(viperClarity = newClarity) }
                         }
-
-                        // Row 2: Audio Output Device & Auto Switch
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "Device Profile",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            FilterChip(
-                                selected = viperConfig.autoDeviceProfileEnabled,
-                                onClick = {
-                                    viperRepo.updateConfig { it.copy(autoDeviceProfileEnabled = !it.autoDeviceProfileEnabled) }
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = MaterialSymbolIcon("sync", filled = true),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
-                                label = { Text("Auto (خودکار)", style = MaterialTheme.typography.labelSmall) }
-                            )
-                        }
-
-                        // Device selector chips
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            item {
-                                FilterChip(
-                                    selected = viperConfig.activeOutputDevice == ViperOutputDevice.SPEAKER,
-                                    onClick = { viperRepo.switchDeviceProfile(ViperOutputDevice.SPEAKER) },
-                                    leadingIcon = {
-                                        Icon(MaterialSymbolIcon("volume_up", filled = true), null, modifier = Modifier.size(16.dp))
-                                    },
-                                    label = { Text("Speaker") }
-                                )
-                            }
-                            item {
-                                FilterChip(
-                                    selected = viperConfig.activeOutputDevice == ViperOutputDevice.HEADSET,
-                                    onClick = { viperRepo.switchDeviceProfile(ViperOutputDevice.HEADSET) },
-                                    leadingIcon = {
-                                        Icon(MaterialSymbolIcon("headphones", filled = true), null, modifier = Modifier.size(16.dp))
-                                    },
-                                    label = { Text("Headset") }
-                                )
-                            }
-                            item {
-                                FilterChip(
-                                    selected = viperConfig.activeOutputDevice == ViperOutputDevice.BLUETOOTH,
-                                    onClick = { viperRepo.switchDeviceProfile(ViperOutputDevice.BLUETOOTH) },
-                                    leadingIcon = {
-                                        Icon(MaterialSymbolIcon("bluetooth", filled = true), null, modifier = Modifier.size(16.dp))
-                                    },
-                                    label = { Text("Bluetooth") }
-                                )
-                            }
-                            item {
-                                FilterChip(
-                                    selected = viperConfig.activeOutputDevice == ViperOutputDevice.USB,
-                                    onClick = { viperRepo.switchDeviceProfile(ViperOutputDevice.USB) },
-                                    leadingIcon = {
-                                        Icon(MaterialSymbolIcon("usb", filled = true), null, modifier = Modifier.size(16.dp))
-                                    },
-                                    label = { Text("USB DAC") }
-                                )
-                            }
-                        }
-
-                        // Row 3: Quick Action Buttons (Engine Status & Profile Manager)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { showViperStatusDialog = true },
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = MaterialSymbolIcon("insights", filled = true),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Engine Status", style = MaterialTheme.typography.labelSmall)
-                            }
-                            OutlinedButton(
-                                onClick = { showViperProfileDialog = true },
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = MaterialSymbolIcon("folder", filled = true),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Profiles", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    val viperTabs = when (viperConfig.uiMode) {
-                        ViperUiMode.SIMPLE -> listOf("FireEQ", "Bass", "Clarity", "Master")
-                        ViperUiMode.MODERATE -> listOf("FireEQ", "Bass", "Clarity", "Spatial", "Master")
-                        ViperUiMode.EXPERT -> listOf("FireEQ", "ViperDDC", "Dynamics", "Bass", "Clarity", "Spatial", "Master")
-                    }
-
-                    var selectedViperTabName by remember { mutableStateOf("FireEQ") }
-                    val currentTabIndex = viperTabs.indexOf(selectedViperTabName).let { if (it >= 0) it else 0 }
-
-                    ScrollableTabRow(
-                        selectedTabIndex = currentTabIndex,
-                        edgePadding = 0.dp,
-                        containerColor = Color.Transparent,
-                        divider = {},
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        viperTabs.forEachIndexed { index, title ->
-                            val isSelected = currentTabIndex == index
-                            Tab(
-                                selected = isSelected,
-                                onClick = {
-                                    HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
-                                    selectedViperTabName = title
-                                },
-                                text = {
-                                    Text(
-                                        text = title,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                }
-                            )
-                        }
-                    }
+                    )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    when (viperTabs.getOrElse(currentTabIndex) { "FireEQ" }) {
-                        "FireEQ" -> {
-                            ViperFireEqualizerCard(
-                                config = viperConfig.fireEqualizer,
-                                onConfigChange = { newEq ->
-                                    viperRepo.updateConfig { it.copy(fireEqualizer = newEq) }
-                                }
-                            )
+                    ViperDdcCard(
+                        config = viperConfig.viperDdc,
+                        onConfigChange = { newDdc ->
+                            viperRepo.updateConfig { it.copy(viperDdc = newDdc) }
                         }
-                        "ViperDDC" -> {
-                            ViperDdcCard(
-                                config = viperConfig.viperDdc,
-                                onConfigChange = { newDdc ->
-                                    viperRepo.updateConfig { it.copy(viperDdc = newDdc) }
-                                }
-                            )
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    ViperConvolverCard(
+                        config = viperConfig.convolver,
+                        onConfigChange = { newConv ->
+                            viperRepo.updateConfig { it.copy(convolver = newConv) }
                         }
-                        "Dynamics" -> {
-                            ViperDynamicsGroup(
-                                masterConfig = viperConfig,
-                                onUpdate = { viperRepo.updateConfig(it) }
-                            )
-                        }
-                        "Bass" -> {
-                            ViperBassGroup(
-                                masterConfig = viperConfig,
-                                onUpdate = { viperRepo.updateConfig(it) }
-                            )
-                        }
-                        "Clarity" -> {
-                            ViperClarityGroup(
-                                masterConfig = viperConfig,
-                                onUpdate = { viperRepo.updateConfig(it) }
-                            )
-                        }
-                        "Spatial" -> {
-                            ViperSpatialGroup(
-                                masterConfig = viperConfig,
-                                onUpdate = { viperRepo.updateConfig(it) }
-                            )
-                        }
-                        "Master" -> {
-                            ViperMasterGateCard(
-                                config = viperConfig.masterGate,
-                                onConfigChange = { newGate ->
-                                    viperRepo.updateConfig { it.copy(masterGate = newGate) }
-                                }
-                            )
-                        }
-                    }
+                    )
                 }
             }
         }

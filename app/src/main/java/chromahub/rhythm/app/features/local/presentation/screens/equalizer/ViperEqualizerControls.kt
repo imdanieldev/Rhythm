@@ -176,6 +176,80 @@ fun ViperDdcCard(
 }
 
 /**
+ * ViPER4Android Clarity UI Card
+ */
+@Composable
+fun ViperClarityCard(
+    config: ViperClarityConfig,
+    onConfigChange: (ViperClarityConfig) -> Unit,
+    activeColor: Color = MaterialTheme.colorScheme.primary
+) {
+    ViperSectionCard(
+        title = "ViPER Clarity",
+        subtitle = "High-Frequency Detail & Presence",
+        icon = MaterialSymbolIcon("waves", filled = true),
+        enabled = config.enabled,
+        onEnabledChange = { onConfigChange(config.copy(enabled = it)) },
+        activeColor = activeColor
+    ) {
+        ViperSegmentedRow(
+            label = "Clarity Mode",
+            options = listOf("Natural", "Ozone+", "X-HiFi"),
+            selectedIndex = config.mode.coerceIn(0, 2),
+            onSelectIndex = { idx -> onConfigChange(config.copy(mode = idx)) },
+            activeColor = activeColor
+        )
+
+        ViperSliderRow(
+            label = "Clarity Gain",
+            value = config.gainDb,
+            valueRange = 0.0f..12.0f,
+            valueFormatted = String.format(Locale.US, "+%.1f dB", config.gainDb),
+            onValueChange = { v -> onConfigChange(config.copy(gainDb = v)) },
+            activeColor = activeColor
+        )
+    }
+}
+
+/**
+ * ViPER4Android Convolver (IRS) UI Card
+ */
+@Composable
+fun ViperConvolverCard(
+    config: ConvolverConfig,
+    onConfigChange: (ConvolverConfig) -> Unit,
+    activeColor: Color = MaterialTheme.colorScheme.primary
+) {
+    val presets = listOf("Studio Master", "Warm Tube", "Analog Tape", "Acoustic Room")
+
+    ViperSectionCard(
+        title = "Convolver (IRS)",
+        subtitle = "Hardware & Room Impulse Response",
+        icon = MaterialSymbolIcon("settings_input_component", filled = true),
+        enabled = config.enabled,
+        onEnabledChange = { onConfigChange(config.copy(enabled = it)) },
+        activeColor = activeColor
+    ) {
+        ViperSegmentedRow(
+            label = "Impulse Preset",
+            options = presets,
+            selectedIndex = presets.indexOf(config.kernelName).coerceAtLeast(0),
+            onSelectIndex = { idx -> onConfigChange(config.copy(kernelName = presets[idx])) },
+            activeColor = activeColor
+        )
+
+        ViperSliderRow(
+            label = "Cross Channel Level",
+            value = config.crossChannel * 100f,
+            valueRange = 0.0f..100.0f,
+            valueFormatted = String.format(Locale.US, "%d%%", (config.crossChannel * 100).toInt()),
+            onValueChange = { v -> onConfigChange(config.copy(crossChannel = v / 100f)) },
+            activeColor = activeColor
+        )
+    }
+}
+
+/**
  * ViPER4Android Dynamics & Loudness Section
  * (AGC, FET Compressor, Multiband Compressor)
  */
