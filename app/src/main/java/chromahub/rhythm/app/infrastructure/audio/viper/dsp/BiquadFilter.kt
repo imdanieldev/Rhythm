@@ -135,7 +135,7 @@ class BiquadFilter {
     /**
      * Process Left sample in Direct Form II Transposed
      */
-    inline fun processLeft(input: Float): Float {
+    fun processLeft(input: Float): Float {
         val out = b0 * input + z1L
         z1L = b1 * input - a1 * out + z2L
         z2L = b2 * input - a2 * out
@@ -145,7 +145,7 @@ class BiquadFilter {
     /**
      * Process Right sample in Direct Form II Transposed
      */
-    inline fun processRight(input: Float): Float {
+    fun processRight(input: Float): Float {
         val out = b0 * input + z1R
         z1R = b1 * input - a1 * out + z2R
         z2R = b2 * input - a2 * out

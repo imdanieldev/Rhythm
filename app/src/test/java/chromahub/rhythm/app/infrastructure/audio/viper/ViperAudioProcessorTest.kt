@@ -102,4 +102,18 @@ class ViperAudioProcessorTest {
         }
         assertTrue("Processed audio should contain signal", maxSample > 1000)
     }
+
+    @Test
+    fun testFireEqualizerAndDdcPresets() {
+        val config = ViperMasterConfig(
+            masterEnabled = true,
+            fireEqualizer = FireEqualizerConfig(enabled = true, presetName = "Rock"),
+            viperDdc = ViperDdcConfig(enabled = true, deviceName = "Apple AirPods Pro")
+        )
+        val activeCount = ViperAudioProcessor.countActiveEffects(config)
+        // limiter + fireEq + viperDdc = 3 active effects
+        assertEquals(3, activeCount)
+        assertTrue(config.fireEqualizer.bands.size == 10)
+        assertTrue(ViperDdcConfig.BUILTIN_DEVICES.containsKey("Apple AirPods Pro"))
+    }
 }

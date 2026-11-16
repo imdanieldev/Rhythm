@@ -9,15 +9,21 @@ package chromahub.rhythm.app.infrastructure.audio.viper
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import chromahub.rhythm.app.util.AudioDeviceManager
+import chromahub.rhythm.app.util.GsonUtils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 /**
  * Repository for managing and persisting ViPER4Android DSP settings in Rhythm.
- * Exposes a reactive StateFlow for seamless UI and real-time audio pipeline updates.
+ * Supports auto-switching profiles per output device (Speaker, Headset, Bluetooth, USB),
+ * UI Complexity modes (Simple, Moderate, Expert), and profile Import/Export.
  */
-class ViperSettingsRepository private constructor(context: Context) {
+class ViperSettingsRepository private constructor(private val context: Context) {
 
     companion object {
         private const val PREFS_NAME = "rhythm_viper_audio_settings"
@@ -33,9 +39,29 @@ class ViperSettingsRepository private constructor(context: Context) {
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val scope = CoroutineScope(Dispatchers.Main)
 
     private val _configFlow = MutableStateFlow(loadConfigFromPrefs())
     val configFlow: StateFlow<ViperMasterConfig> = _configFlow.asStateFlow()
+
+    init {
+        // Monitor audio device changes to auto-switch profile if enabled
+        val audioDeviceManager = AudioDeviceManager.getInstance(context)
+        scope.launch {
+            audioDeviceManager.devices.collect { _ ->
+                if (_configFlow.value.autoDeviceProfileEnabled) {
+                    val detectedDevice = when {
+                        audioDeviceManager.isBluetoothActive() -> ViperOutputDevice.BLUETOOTH
+                        audioDeviceManager.isHeadsetConnected() -> ViperOutputDevice.HEADSET
+                        else -> ViperOutputDevice.SPEAKER
+                    }
+                    if (detectedDevice != _configFlow.value.activeOutputDevice) {
+                        switchDeviceProfile(detectedDevice)
+                    }
+                }
+            }
+        }
+    }
 
     fun updateConfig(updater: (ViperMasterConfig) -> ViperMasterConfig) {
         val newConfig = updater(_configFlow.value)
@@ -47,9 +73,79 @@ class ViperSettingsRepository private constructor(context: Context) {
         updateConfig { it.copy(masterEnabled = enabled) }
     }
 
+    fun setUiMode(mode: ViperUiMode) {
+        updateConfig { it.copy(uiMode = mode) }
+    }
+
+    fun switchDeviceProfile(device: ViperOutputDevice) {
+        // Save current device profile first
+        saveProfileForDevice(_configFlow.value.activeOutputDevice, _configFlow.value)
+        // Load target device profile
+        val targetConfig = loadProfileForDevice(device).copy(
+            activeOutputDevice = device,
+            uiMode = _configFlow.value.uiMode,
+            autoDeviceProfileEnabled = _configFlow.value.autoDeviceProfileEnabled
+        )
+        _configFlow.value = targetConfig
+        saveConfigToPrefs(targetConfig)
+    }
+
+    private fun getDevicePrefix(device: ViperOutputDevice): String = "dev_${device.name.lowercase()}_"
+
+    private fun saveProfileForDevice(device: ViperOutputDevice, config: ViperMasterConfig) {
+        val p = getDevicePrefix(device)
+        prefs.edit {
+            val json = GsonUtils.gson.toJson(config)
+            putString("${p}profile_json", json)
+        }
+    }
+
+    private fun loadProfileForDevice(device: ViperOutputDevice): ViperMasterConfig {
+        val p = getDevicePrefix(device)
+        val json = prefs.getString("${p}profile_json", null)
+        if (json != null) {
+            try {
+                return GsonUtils.gson.fromJson(json, ViperMasterConfig::class.java)
+            } catch (_: Exception) {}
+        }
+        return ViperMasterConfig(activeOutputDevice = device)
+    }
+
+    /**
+     * Export full active ViPER profile to a JSON string bundle
+     */
+    fun exportProfileJson(): String {
+        return GsonUtils.gson.toJson(_configFlow.value)
+    }
+
+    /**
+     * Import full ViPER profile from a JSON string bundle
+     */
+    fun importProfileJson(json: String): Boolean {
+        return try {
+            val imported = GsonUtils.gson.fromJson(json, ViperMasterConfig::class.java)
+            _configFlow.value = imported
+            saveConfigToPrefs(imported)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun loadConfigFromPrefs(): ViperMasterConfig {
+        val rawUiMode = prefs.getString("viper_ui_mode", ViperUiMode.MODERATE.name)
+        val uiMode = try { ViperUiMode.valueOf(rawUiMode ?: "MODERATE") } catch (_: Exception) { ViperUiMode.MODERATE }
+        val rawDevice = prefs.getString("viper_active_device", ViperOutputDevice.SPEAKER.name)
+        val device = try { ViperOutputDevice.valueOf(rawDevice ?: "SPEAKER") } catch (_: Exception) { ViperOutputDevice.SPEAKER }
+
+        val bandsString = prefs.getString("feq_bands", null)
+        val bandsList = bandsString?.split(",")?.mapNotNull { it.toFloatOrNull() } ?: List(10) { 0.0f }
+
         return ViperMasterConfig(
             masterEnabled = prefs.getBoolean("master_enabled", false),
+            uiMode = uiMode,
+            activeOutputDevice = device,
+            autoDeviceProfileEnabled = prefs.getBoolean("auto_device_profile", true),
             bindToSystemEffect = prefs.getBoolean("bind_system_effect", false),
             masterGate = MasterGateConfig(
                 limiterEnabled = prefs.getBoolean("mg_limiter_enabled", true),
@@ -63,12 +159,6 @@ class ViperSettingsRepository private constructor(context: Context) {
                 maxGainDb = prefs.getFloat("pgc_max_gain", 6.0f),
                 outputThresholdDb = prefs.getFloat("pgc_thresh", -1.0f)
             ),
-            lufs = LufsConfig(
-                enabled = prefs.getBoolean("lufs_enabled", false),
-                targetLufs = prefs.getFloat("lufs_target", -14.0f),
-                maxGainDb = prefs.getFloat("lufs_max_gain", 6.0f),
-                speed = prefs.getInt("lufs_speed", 1)
-            ),
             fetCompressor = FetCompressorConfig(
                 enabled = prefs.getBoolean("fet_enabled", false),
                 thresholdDb = prefs.getFloat("fet_thresh", -18.0f),
@@ -78,28 +168,21 @@ class ViperSettingsRepository private constructor(context: Context) {
                 makeupGainDb = prefs.getFloat("fet_makeup", 0.0f),
                 noClip = prefs.getBoolean("fet_noclip", true)
             ),
+            fireEqualizer = FireEqualizerConfig(
+                enabled = prefs.getBoolean("feq_enabled", false),
+                presetName = prefs.getString("feq_preset", "Flat") ?: "Flat",
+                bands = bandsList
+            ),
+            viperDdc = ViperDdcConfig(
+                enabled = prefs.getBoolean("vddc_enabled", false),
+                deviceName = prefs.getString("vddc_device", "None") ?: "None"
+            ),
             viperBass = ViperBassConfig(
                 enabled = prefs.getBoolean("vb_enabled", false),
                 mode = prefs.getInt("vb_mode", 0),
                 frequencyHz = prefs.getInt("vb_freq", 60),
                 gainDb = prefs.getFloat("vb_gain", 4.0f),
                 antiPop = prefs.getBoolean("vb_antipop", true)
-            ),
-            bassMono = BassMonoConfig(
-                enabled = prefs.getBoolean("bm_enabled", false),
-                frequencyHz = prefs.getInt("bm_freq", 80)
-            ),
-            psychoacousticBass = PsychoacousticBassConfig(
-                enabled = prefs.getBoolean("pab_enabled", false),
-                cutoffHz = prefs.getInt("pab_cutoff", 80),
-                intensity = prefs.getFloat("pab_intensity", 0.5f),
-                harmonicOrder = prefs.getInt("pab_order", 3),
-                originalLevel = prefs.getFloat("pab_orig", 0.8f)
-            ),
-            spectrumExtension = SpectrumExtensionConfig(
-                enabled = prefs.getBoolean("spe_enabled", false),
-                strength = prefs.getFloat("spe_strength", 0.5f),
-                exciter = prefs.getFloat("spe_exciter", 0.3f)
             ),
             viperClarity = ViperClarityConfig(
                 enabled = prefs.getBoolean("vc_enabled", false),
@@ -111,15 +194,6 @@ class ViperSettingsRepository private constructor(context: Context) {
                 model = prefs.getInt("tube_model", 0),
                 drive = prefs.getFloat("tube_drive", 0.4f),
                 mix = prefs.getFloat("tube_mix", 0.3f)
-            ),
-            analogX = AnalogXConfig(
-                enabled = prefs.getBoolean("ax_enabled", false),
-                mode = prefs.getInt("ax_mode", 1)
-            ),
-            dynamicSystem = DynamicSystemConfig(
-                enabled = prefs.getBoolean("ds_enabled", false),
-                device = prefs.getInt("ds_device", 1),
-                strength = prefs.getFloat("ds_strength", 0.4f)
             ),
             convolver = ConvolverConfig(
                 enabled = prefs.getBoolean("conv_enabled", false),
@@ -139,14 +213,6 @@ class ViperSettingsRepository private constructor(context: Context) {
                 wetDryMix = prefs.getFloat("diff_mix", 0.5f),
                 lpCutoffHz = prefs.getInt("diff_lp", 6000)
             ),
-            stereoImager = StereoImagerConfig(
-                enabled = prefs.getBoolean("si_enabled", false),
-                lowWidth = prefs.getFloat("si_low_w", 0.7f),
-                midWidth = prefs.getFloat("si_mid_w", 1.2f),
-                highWidth = prefs.getFloat("si_high_w", 1.4f),
-                lowCrossoverHz = prefs.getInt("si_low_cross", 250),
-                highCrossoverHz = prefs.getInt("si_high_cross", 4000)
-            ),
             headphoneSurround = HeadphoneSurroundConfig(
                 enabled = prefs.getBoolean("hs_enabled", false),
                 quality = prefs.getInt("hs_qual", 1)
@@ -159,18 +225,43 @@ class ViperSettingsRepository private constructor(context: Context) {
                 wet = prefs.getFloat("rev_wet", 0.15f),
                 dry = prefs.getFloat("rev_dry", 0.9f)
             ),
+            dynamicSystem = DynamicSystemConfig(
+                enabled = prefs.getBoolean("ds_enabled", false),
+                device = prefs.getInt("ds_device", 1),
+                strength = prefs.getFloat("ds_strength", 0.4f)
+            ),
+            analogX = AnalogXConfig(
+                enabled = prefs.getBoolean("ax_enabled", false),
+                mode = prefs.getInt("ax_mode", 1)
+            ),
+            spectrumExtension = SpectrumExtensionConfig(
+                enabled = prefs.getBoolean("spe_enabled", false),
+                strength = prefs.getFloat("spe_strength", 0.5f),
+                exciter = prefs.getFloat("spe_exciter", 0.3f)
+            ),
+            bassMono = BassMonoConfig(
+                enabled = prefs.getBoolean("bm_enabled", false),
+                frequencyHz = prefs.getInt("bm_freq", 80)
+            ),
+            psychoacousticBass = PsychoacousticBassConfig(
+                enabled = prefs.getBoolean("pab_enabled", false),
+                cutoffHz = prefs.getInt("pab_cutoff", 80),
+                intensity = prefs.getFloat("pab_intensity", 0.5f),
+                harmonicOrder = prefs.getInt("pab_order", 3),
+                originalLevel = prefs.getFloat("pab_orig", 0.8f)
+            ),
+            stereoImager = StereoImagerConfig(
+                enabled = prefs.getBoolean("si_enabled", false),
+                lowWidth = prefs.getFloat("si_low_w", 0.7f),
+                midWidth = prefs.getFloat("si_mid_w", 1.2f),
+                highWidth = prefs.getFloat("si_high_w", 1.4f)
+            ),
             cureCrossfeed = CureCrossfeedConfig(
                 enabled = prefs.getBoolean("cure_enabled", false),
                 preset = prefs.getInt("cure_preset", 1)
             ),
             dynamicEq = DynamicEqConfig(
-                enabled = prefs.getBoolean("deq_enabled", false),
-                band1Freq = prefs.getInt("deq_b1_f", 80),
-                band1GainDb = prefs.getFloat("deq_b1_g", 0.0f),
-                band2Freq = prefs.getInt("deq_b2_f", 1000),
-                band2GainDb = prefs.getFloat("deq_b2_g", 0.0f),
-                band3Freq = prefs.getInt("deq_b3_f", 8000),
-                band3GainDb = prefs.getFloat("deq_b3_g", 0.0f)
+                enabled = prefs.getBoolean("deq_enabled", false)
             ),
             speakerOpt = SpeakerOptConfig(
                 enabled = prefs.getBoolean("so_enabled", false)
@@ -181,6 +272,9 @@ class ViperSettingsRepository private constructor(context: Context) {
     private fun saveConfigToPrefs(c: ViperMasterConfig) {
         prefs.edit {
             putBoolean("master_enabled", c.masterEnabled)
+            putString("viper_ui_mode", c.uiMode.name)
+            putString("viper_active_device", c.activeOutputDevice.name)
+            putBoolean("auto_device_profile", c.autoDeviceProfileEnabled)
             putBoolean("bind_system_effect", c.bindToSystemEffect)
 
             // Master Gate
@@ -189,17 +283,20 @@ class ViperSettingsRepository private constructor(context: Context) {
             putFloat("mg_out_vol", c.masterGate.outputVolumeDb)
             putFloat("mg_pan", c.masterGate.channelPan)
 
+            // FireEqualizer
+            putBoolean("feq_enabled", c.fireEqualizer.enabled)
+            putString("feq_preset", c.fireEqualizer.presetName)
+            putString("feq_bands", c.fireEqualizer.bands.joinToString(","))
+
+            // ViperDDC
+            putBoolean("vddc_enabled", c.viperDdc.enabled)
+            putString("vddc_device", c.viperDdc.deviceName)
+
             // Playback Gain
             putBoolean("pgc_enabled", c.playbackGain.enabled)
             putInt("pgc_strength", c.playbackGain.strength)
             putFloat("pgc_max_gain", c.playbackGain.maxGainDb)
             putFloat("pgc_thresh", c.playbackGain.outputThresholdDb)
-
-            // LUFS
-            putBoolean("lufs_enabled", c.lufs.enabled)
-            putFloat("lufs_target", c.lufs.targetLufs)
-            putFloat("lufs_max_gain", c.lufs.maxGainDb)
-            putInt("lufs_speed", c.lufs.speed)
 
             // FET Compressor
             putBoolean("fet_enabled", c.fetCompressor.enabled)
@@ -217,41 +314,16 @@ class ViperSettingsRepository private constructor(context: Context) {
             putFloat("vb_gain", c.viperBass.gainDb)
             putBoolean("vb_antipop", c.viperBass.antiPop)
 
-            // Bass Mono
-            putBoolean("bm_enabled", c.bassMono.enabled)
-            putInt("bm_freq", c.bassMono.frequencyHz)
-
-            // Psychoacoustic Bass
-            putBoolean("pab_enabled", c.psychoacousticBass.enabled)
-            putInt("pab_cutoff", c.psychoacousticBass.cutoffHz)
-            putFloat("pab_intensity", c.psychoacousticBass.intensity)
-            putInt("pab_order", c.psychoacousticBass.harmonicOrder)
-            putFloat("pab_orig", c.psychoacousticBass.originalLevel)
-
-            // Spectrum Extension
-            putBoolean("spe_enabled", c.spectrumExtension.enabled)
-            putFloat("spe_strength", c.spectrumExtension.strength)
-            putFloat("spe_exciter", c.spectrumExtension.exciter)
-
             // ViPER Clarity
             putBoolean("vc_enabled", c.viperClarity.enabled)
             putInt("vc_mode", c.viperClarity.mode)
             putFloat("vc_gain", c.viperClarity.gainDb)
 
-            // Tube Simulator
+            // Tube Simulator (6N1J)
             putBoolean("tube_enabled", c.tubeSimulator.enabled)
             putInt("tube_model", c.tubeSimulator.model)
             putFloat("tube_drive", c.tubeSimulator.drive)
             putFloat("tube_mix", c.tubeSimulator.mix)
-
-            // AnalogX
-            putBoolean("ax_enabled", c.analogX.enabled)
-            putInt("ax_mode", c.analogX.mode)
-
-            // Dynamic System
-            putBoolean("ds_enabled", c.dynamicSystem.enabled)
-            putInt("ds_device", c.dynamicSystem.device)
-            putFloat("ds_strength", c.dynamicSystem.strength)
 
             // Convolver
             putBoolean("conv_enabled", c.convolver.enabled)
@@ -271,15 +343,7 @@ class ViperSettingsRepository private constructor(context: Context) {
             putFloat("diff_mix", c.diffSurround.wetDryMix)
             putInt("diff_lp", c.diffSurround.lpCutoffHz)
 
-            // Stereo Imager
-            putBoolean("si_enabled", c.stereoImager.enabled)
-            putFloat("si_low_w", c.stereoImager.lowWidth)
-            putFloat("si_mid_w", c.stereoImager.midWidth)
-            putFloat("si_high_w", c.stereoImager.highWidth)
-            putInt("si_low_cross", c.stereoImager.lowCrossoverHz)
-            putInt("si_high_cross", c.stereoImager.highCrossoverHz)
-
-            // Headphone Surround
+            // Headphone Surround VHS+
             putBoolean("hs_enabled", c.headphoneSurround.enabled)
             putInt("hs_qual", c.headphoneSurround.quality)
 
@@ -291,18 +355,43 @@ class ViperSettingsRepository private constructor(context: Context) {
             putFloat("rev_wet", c.reverberation.wet)
             putFloat("rev_dry", c.reverberation.dry)
 
+            // Dynamic System
+            putBoolean("ds_enabled", c.dynamicSystem.enabled)
+            putInt("ds_device", c.dynamicSystem.device)
+            putFloat("ds_strength", c.dynamicSystem.strength)
+
+            // AnalogX
+            putBoolean("ax_enabled", c.analogX.enabled)
+            putInt("ax_mode", c.analogX.mode)
+
+            // Spectrum Extension
+            putBoolean("spe_enabled", c.spectrumExtension.enabled)
+            putFloat("spe_strength", c.spectrumExtension.strength)
+            putFloat("spe_exciter", c.spectrumExtension.exciter)
+
+            // Bass Mono
+            putBoolean("bm_enabled", c.bassMono.enabled)
+            putInt("bm_freq", c.bassMono.frequencyHz)
+
+            // Psychoacoustic Bass
+            putBoolean("pab_enabled", c.psychoacousticBass.enabled)
+            putInt("pab_cutoff", c.psychoacousticBass.cutoffHz)
+            putFloat("pab_intensity", c.psychoacousticBass.intensity)
+            putFloat("pab_order", c.psychoacousticBass.harmonicOrder)
+            putFloat("pab_orig", c.psychoacousticBass.originalLevel)
+
+            // Stereo Imager
+            putBoolean("si_enabled", c.stereoImager.enabled)
+            putFloat("si_low_w", c.stereoImager.lowWidth)
+            putFloat("si_mid_w", c.stereoImager.midWidth)
+            putFloat("si_high_w", c.stereoImager.highWidth)
+
             // Cure Crossfeed
             putBoolean("cure_enabled", c.cureCrossfeed.enabled)
             putInt("cure_preset", c.cureCrossfeed.preset)
 
             // Dynamic EQ
             putBoolean("deq_enabled", c.dynamicEq.enabled)
-            putInt("deq_b1_f", c.dynamicEq.band1Freq)
-            putFloat("deq_b1_g", c.dynamicEq.band1GainDb)
-            putInt("deq_b2_f", c.dynamicEq.band2Freq)
-            putFloat("deq_b2_g", c.dynamicEq.band2GainDb)
-            putInt("deq_b3_f", c.dynamicEq.band3Freq)
-            putFloat("deq_b3_g", c.dynamicEq.band3GainDb)
 
             // Speaker Opt
             putBoolean("so_enabled", c.speakerOpt.enabled)

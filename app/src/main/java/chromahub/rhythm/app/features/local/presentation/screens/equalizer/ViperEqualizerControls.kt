@@ -71,8 +71,113 @@ fun ViperMasterGateCard(
 }
 
 /**
+ * ViPER4Android FireEqualizer UI
+ */
+@Composable
+fun ViperFireEqualizerCard(
+    config: FireEqualizerConfig,
+    onConfigChange: (FireEqualizerConfig) -> Unit,
+    activeColor: Color = MaterialTheme.colorScheme.primary
+) {
+    val presets = FireEqualizerConfig.BUILTIN_PRESETS.keys.toList()
+
+    ViperSectionCard(
+        title = "FireEqualizer",
+        subtitle = "10-Band Graphic Tone Equalizer",
+        icon = MaterialSymbolIcon("equalizer", filled = true),
+        enabled = config.enabled,
+        onEnabledChange = { onConfigChange(config.copy(enabled = it)) },
+        activeColor = activeColor
+    ) {
+        // Preset selector
+        ViperSegmentedRow(
+            label = "Equalizer Preset",
+            options = listOf("Flat", "Rock", "Acoustic", "Bass", "R&B"),
+            selectedIndex = listOf("Flat", "Rock", "Acoustic", "Bass Booster", "R&B").indexOf(config.presetName).coerceAtLeast(0),
+            onSelectIndex = { idx ->
+                val pName = listOf("Flat", "Rock", "Acoustic", "Bass Booster", "R&B")[idx]
+                val bands = FireEqualizerConfig.BUILTIN_PRESETS[pName] ?: List(10) { 0.0f }
+                onConfigChange(config.copy(presetName = pName, bands = bands))
+            },
+            activeColor = activeColor
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Band sliders
+        val freqs = FireEqualizerConfig.FREQUENCIES_10
+        for (i in 0 until minOf(10, config.bands.size)) {
+            val freqLabel = if (freqs[i] >= 1000) "${freqs[i] / 1000} kHz" else "${freqs[i]} Hz"
+            ViperSliderRow(
+                label = freqLabel,
+                value = config.bands[i],
+                valueRange = -12.0f..12.0f,
+                valueFormatted = String.format(Locale.US, "%+.1f dB", config.bands[i]),
+                onValueChange = { newLevel ->
+                    val updatedBands = config.bands.toMutableList()
+                    updatedBands[i] = newLevel
+                    onConfigChange(config.copy(bands = updatedBands, presetName = "Custom"))
+                },
+                activeColor = activeColor
+            )
+        }
+    }
+}
+
+/**
+ * ViPER4Android ViperDDC (Digital Device Correction) UI
+ */
+@Composable
+fun ViperDdcCard(
+    config: ViperDdcConfig,
+    onConfigChange: (ViperDdcConfig) -> Unit,
+    activeColor: Color = MaterialTheme.colorScheme.primary
+) {
+    val devices = ViperDdcConfig.BUILTIN_DEVICES
+
+    ViperSectionCard(
+        title = "ViperDDC",
+        subtitle = "Digital Device Headphone Correction",
+        icon = MaterialSymbolIcon("headphones", filled = true),
+        enabled = config.enabled,
+        onEnabledChange = { onConfigChange(config.copy(enabled = it)) },
+        activeColor = activeColor
+    ) {
+        ViperSegmentedRow(
+            label = "Headphone Model",
+            options = listOf("None", "AirPods", "Sony XM4", "HD 650", "M50x"),
+            selectedIndex = when (config.deviceName) {
+                "Apple AirPods Pro" -> 1
+                "Sony WH-1000XM4" -> 2
+                "Sennheiser HD 650" -> 3
+                "Audio-Technica ATH-M50x" -> 4
+                else -> 0
+            },
+            onSelectIndex = { idx ->
+                val chosen = when (idx) {
+                    1 -> "Apple AirPods Pro"
+                    2 -> "Sony WH-1000XM4"
+                    3 -> "Sennheiser HD 650"
+                    4 -> "Audio-Technica ATH-M50x"
+                    else -> "None"
+                }
+                onConfigChange(config.copy(deviceName = chosen))
+            },
+            activeColor = activeColor
+        )
+
+        Text(
+            text = "Currently applied DDC curve: ${config.deviceName}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp)
+        )
+    }
+}
+
+/**
  * ViPER4Android Dynamics & Loudness Section
- * (Playback Gain AGC, LUFS Target, FET Compressor, Multiband Compressor)
+ * (AGC, FET Compressor, Multiband Compressor)
  */
 @Composable
 fun ViperDynamicsGroup(
@@ -83,7 +188,7 @@ fun ViperDynamicsGroup(
 
     // 1. Playback Gain Control (AGC)
     ViperSectionCard(
-        title = "Playback Gain (AGC)",
+        title = "AGC (Playback Gain)",
         subtitle = "Dynamic Auto Gain Leveler",
         icon = MaterialSymbolIcon("volume_up", filled = true),
         enabled = masterConfig.playbackGain.enabled,
@@ -117,119 +222,66 @@ fun ViperDynamicsGroup(
         )
     }
 
-    // 2. LUFS Loudness Target (EBU R128)
-    ViperSectionCard(
-        title = "LUFS Loudness Normalization",
-        subtitle = "Broadcast-Grade Volume Target",
-        icon = MaterialSymbolIcon("equalizer", filled = true),
-        enabled = masterConfig.lufs.enabled,
-        onEnabledChange = { en -> onUpdate { it.copy(lufs = it.lufs.copy(enabled = en)) } },
-        activeColor = secColor
-    ) {
-        ViperSliderRow(
-            label = "Target Loudness",
-            value = masterConfig.lufs.targetLufs,
-            valueRange = -24.0f..-8.0f,
-            valueFormatted = String.format(Locale.US, "%.1f LUFS", masterConfig.lufs.targetLufs),
-            onValueChange = { v -> onUpdate { it.copy(lufs = it.lufs.copy(targetLufs = v)) } },
+    // 2. FET Compressor
+    if (masterConfig.uiMode == ViperUiMode.EXPERT) {
+        ViperSectionCard(
+            title = "Fet Compressor",
+            subtitle = "Vintage Fast Analog Dynamics & Punch",
+            icon = MaterialSymbolIcon("compress", filled = true),
+            enabled = masterConfig.fetCompressor.enabled,
+            onEnabledChange = { en -> onUpdate { it.copy(fetCompressor = it.fetCompressor.copy(enabled = en)) } },
             activeColor = secColor
-        )
+        ) {
+            ViperSliderRow(
+                label = "Threshold",
+                value = masterConfig.fetCompressor.thresholdDb,
+                valueRange = -40.0f..0.0f,
+                valueFormatted = String.format(Locale.US, "%.1f dB", masterConfig.fetCompressor.thresholdDb),
+                onValueChange = { v -> onUpdate { it.copy(fetCompressor = it.fetCompressor.copy(thresholdDb = v)) } },
+                activeColor = secColor
+            )
 
-        ViperSegmentedRow(
-            label = "Response Speed",
-            options = listOf("Slow", "Moderate", "Fast"),
-            selectedIndex = masterConfig.lufs.speed.coerceIn(0, 2),
-            onSelectIndex = { idx -> onUpdate { it.copy(lufs = it.lufs.copy(speed = idx)) } },
-            activeColor = secColor
-        )
-    }
+            ViperSliderRow(
+                label = "Ratio",
+                value = masterConfig.fetCompressor.ratio,
+                valueRange = 1.0f..10.0f,
+                valueFormatted = String.format(Locale.US, "%.1f:1", masterConfig.fetCompressor.ratio),
+                onValueChange = { v -> onUpdate { it.copy(fetCompressor = it.fetCompressor.copy(ratio = v)) } },
+                activeColor = secColor
+            )
 
-    // 3. FET Compressor
-    ViperSectionCard(
-        title = "FET Vintage Compressor",
-        subtitle = "Fast Analog Dynamics & Punch",
-        icon = MaterialSymbolIcon("compress", filled = true),
-        enabled = masterConfig.fetCompressor.enabled,
-        onEnabledChange = { en -> onUpdate { it.copy(fetCompressor = it.fetCompressor.copy(enabled = en)) } },
-        activeColor = secColor
-    ) {
-        ViperSliderRow(
-            label = "Threshold",
-            value = masterConfig.fetCompressor.thresholdDb,
-            valueRange = -40.0f..0.0f,
-            valueFormatted = String.format(Locale.US, "%.1f dB", masterConfig.fetCompressor.thresholdDb),
-            onValueChange = { v -> onUpdate { it.copy(fetCompressor = it.fetCompressor.copy(thresholdDb = v)) } },
-            activeColor = secColor
-        )
+            ViperSliderRow(
+                label = "Attack Time",
+                value = masterConfig.fetCompressor.attackMs,
+                valueRange = 0.5f..50.0f,
+                valueFormatted = String.format(Locale.US, "%.1f ms", masterConfig.fetCompressor.attackMs),
+                onValueChange = { v -> onUpdate { it.copy(fetCompressor = it.fetCompressor.copy(attackMs = v)) } },
+                activeColor = secColor
+            )
 
-        ViperSliderRow(
-            label = "Ratio",
-            value = masterConfig.fetCompressor.ratio,
-            valueRange = 1.0f..10.0f,
-            valueFormatted = String.format(Locale.US, "%.1f:1", masterConfig.fetCompressor.ratio),
-            onValueChange = { v -> onUpdate { it.copy(fetCompressor = it.fetCompressor.copy(ratio = v)) } },
-            activeColor = secColor
-        )
+            ViperSliderRow(
+                label = "Release Time",
+                value = masterConfig.fetCompressor.releaseMs,
+                valueRange = 10.0f..400.0f,
+                valueFormatted = String.format(Locale.US, "%.0f ms", masterConfig.fetCompressor.releaseMs),
+                onValueChange = { v -> onUpdate { it.copy(fetCompressor = it.fetCompressor.copy(releaseMs = v)) } },
+                activeColor = secColor
+            )
 
-        ViperSliderRow(
-            label = "Attack Time",
-            value = masterConfig.fetCompressor.attackMs,
-            valueRange = 0.5f..50.0f,
-            valueFormatted = String.format(Locale.US, "%.1f ms", masterConfig.fetCompressor.attackMs),
-            onValueChange = { v -> onUpdate { it.copy(fetCompressor = it.fetCompressor.copy(attackMs = v)) } },
-            activeColor = secColor
-        )
-
-        ViperSliderRow(
-            label = "Release Time",
-            value = masterConfig.fetCompressor.releaseMs,
-            valueRange = 10.0f..400.0f,
-            valueFormatted = String.format(Locale.US, "%.0f ms", masterConfig.fetCompressor.releaseMs),
-            onValueChange = { v -> onUpdate { it.copy(fetCompressor = it.fetCompressor.copy(releaseMs = v)) } },
-            activeColor = secColor
-        )
-
-        ViperSliderRow(
-            label = "Makeup Gain",
-            value = masterConfig.fetCompressor.makeupGainDb,
-            valueRange = 0.0f..12.0f,
-            valueFormatted = String.format(Locale.US, "+%.1f dB", masterConfig.fetCompressor.makeupGainDb),
-            onValueChange = { v -> onUpdate { it.copy(fetCompressor = it.fetCompressor.copy(makeupGainDb = v)) } },
-            activeColor = secColor
-        )
-    }
-
-    // 4. Multiband Compressor
-    ViperSectionCard(
-        title = "Multiband Compressor",
-        subtitle = "5-Band Crossover Dynamic Processing",
-        icon = MaterialSymbolIcon("stacked_bar_chart", filled = true),
-        enabled = masterConfig.multibandCompressor.enabled,
-        onEnabledChange = { en -> onUpdate { it.copy(multibandCompressor = it.multibandCompressor.copy(enabled = en)) } },
-        activeColor = secColor
-    ) {
-        ViperSliderRow(
-            label = "Bass / Mid Crossover",
-            value = masterConfig.multibandCompressor.crossover1.toFloat(),
-            valueRange = 80.0f..250.0f,
-            valueFormatted = String.format(Locale.US, "%d Hz", masterConfig.multibandCompressor.crossover1),
-            onValueChange = { v -> onUpdate { it.copy(multibandCompressor = it.multibandCompressor.copy(crossover1 = v.toInt())) } },
-            activeColor = secColor
-        )
-
-        ViperSliderRow(
-            label = "Mid / Treble Crossover",
-            value = masterConfig.multibandCompressor.crossover3.toFloat(),
-            valueRange = 2500.0f..6000.0f,
-            valueFormatted = String.format(Locale.US, "%d Hz", masterConfig.multibandCompressor.crossover3),
-            onValueChange = { v -> onUpdate { it.copy(multibandCompressor = it.multibandCompressor.copy(crossover3 = v.toInt())) } },
-            activeColor = secColor
-        )
+            ViperSliderRow(
+                label = "Makeup Gain",
+                value = masterConfig.fetCompressor.makeupGainDb,
+                valueRange = 0.0f..12.0f,
+                valueFormatted = String.format(Locale.US, "+%.1f dB", masterConfig.fetCompressor.makeupGainDb),
+                onValueChange = { v -> onUpdate { it.copy(fetCompressor = it.fetCompressor.copy(makeupGainDb = v)) } },
+                activeColor = secColor
+            )
+        }
     }
 }
 
 /**
- * ViPER4Android Bass & Low-End Section
+ * ViPER4Android Bass Section
  * (ViPER Bass, Bass Mono, Psychoacoustic Bass, Dynamic System)
  */
 @Composable
@@ -241,7 +293,7 @@ fun ViperBassGroup(
 
     // 1. ViPER Bass
     ViperSectionCard(
-        title = "ViPER Bass",
+        title = "Bass (ViPER Bass)",
         subtitle = "Natural, Pure & Subwoofer Low-End",
         icon = RhythmIcons.SpeakerFilled,
         enabled = masterConfig.viperBass.enabled,
@@ -273,106 +325,90 @@ fun ViperBassGroup(
             onValueChange = { v -> onUpdate { it.copy(viperBass = it.viperBass.copy(gainDb = v)) } },
             activeColor = bassColor
         )
+    }
 
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+    if (masterConfig.uiMode != ViperUiMode.SIMPLE) {
+        // 2. Dynamic System (Driver Emulation)
+        ViperSectionCard(
+            title = "Dynamic System",
+            subtitle = "Acoustic Transducer & Driver Emulation",
+            icon = MaterialSymbolIcon("graphic_eq", filled = true),
+            enabled = masterConfig.dynamicSystem.enabled,
+            onEnabledChange = { en -> onUpdate { it.copy(dynamicSystem = it.dynamicSystem.copy(enabled = en)) } },
+            activeColor = bassColor
         ) {
-            Text(text = "Anti-Pop Protection", style = MaterialTheme.typography.bodyMedium)
-            Switch(
-                checked = masterConfig.viperBass.antiPop,
-                onCheckedChange = { chk -> onUpdate { it.copy(viperBass = it.viperBass.copy(antiPop = chk)) } }
+            ViperSegmentedRow(
+                label = "Transducer Preset",
+                options = listOf("Earphone", "Hi-End", "EarPods", "Extreme", "Speaker"),
+                selectedIndex = masterConfig.dynamicSystem.device.coerceIn(0, 4),
+                onSelectIndex = { idx -> onUpdate { it.copy(dynamicSystem = it.dynamicSystem.copy(device = idx)) } },
+                activeColor = bassColor
+            )
+
+            ViperSliderRow(
+                label = "Effect Strength",
+                value = masterConfig.dynamicSystem.strength * 100f,
+                valueRange = 0.0f..100.0f,
+                valueFormatted = String.format(Locale.US, "%d%%", (masterConfig.dynamicSystem.strength * 100).toInt()),
+                onValueChange = { v -> onUpdate { it.copy(dynamicSystem = it.dynamicSystem.copy(strength = v / 100f)) } },
+                activeColor = bassColor
             )
         }
     }
 
-    // 2. Bass Mono
-    ViperSectionCard(
-        title = "Bass Mono",
-        subtitle = "Center Low-End Frequencies for Punch",
-        icon = MaterialSymbolIcon("music_note", filled = true),
-        enabled = masterConfig.bassMono.enabled,
-        onEnabledChange = { en -> onUpdate { it.copy(bassMono = it.bassMono.copy(enabled = en)) } },
-        activeColor = bassColor
-    ) {
-        ViperSliderRow(
-            label = "Cutoff Frequency",
-            value = masterConfig.bassMono.frequencyHz.toFloat(),
-            valueRange = 40.0f..200.0f,
-            valueFormatted = String.format(Locale.US, "%d Hz", masterConfig.bassMono.frequencyHz),
-            onValueChange = { v -> onUpdate { it.copy(bassMono = it.bassMono.copy(frequencyHz = v.toInt())) } },
+    if (masterConfig.uiMode == ViperUiMode.EXPERT) {
+        // 3. Bass Mono
+        ViperSectionCard(
+            title = "Bass Mono",
+            subtitle = "Center Low-End Frequencies for Punch",
+            icon = MaterialSymbolIcon("music_note", filled = true),
+            enabled = masterConfig.bassMono.enabled,
+            onEnabledChange = { en -> onUpdate { it.copy(bassMono = it.bassMono.copy(enabled = en)) } },
             activeColor = bassColor
-        )
-    }
+        ) {
+            ViperSliderRow(
+                label = "Cutoff Frequency",
+                value = masterConfig.bassMono.frequencyHz.toFloat(),
+                valueRange = 40.0f..200.0f,
+                valueFormatted = String.format(Locale.US, "%d Hz", masterConfig.bassMono.frequencyHz),
+                onValueChange = { v -> onUpdate { it.copy(bassMono = it.bassMono.copy(frequencyHz = v.toInt())) } },
+                activeColor = bassColor
+            )
+        }
 
-    // 3. Psychoacoustic Bass
-    ViperSectionCard(
-        title = "Psychoacoustic Bass",
-        subtitle = "Missing Fundamental Harmonic Generator",
-        icon = MaterialSymbolIcon("psychology", filled = true),
-        enabled = masterConfig.psychoacousticBass.enabled,
-        onEnabledChange = { en -> onUpdate { it.copy(psychoacousticBass = it.psychoacousticBass.copy(enabled = en)) } },
-        activeColor = bassColor
-    ) {
-        ViperSliderRow(
-            label = "Bass Cutoff",
-            value = masterConfig.psychoacousticBass.cutoffHz.toFloat(),
-            valueRange = 40.0f..140.0f,
-            valueFormatted = String.format(Locale.US, "%d Hz", masterConfig.psychoacousticBass.cutoffHz),
-            onValueChange = { v -> onUpdate { it.copy(psychoacousticBass = it.psychoacousticBass.copy(cutoffHz = v.toInt())) } },
+        // 4. Psychoacoustic Bass
+        ViperSectionCard(
+            title = "Psychoacoustic Bass",
+            subtitle = "Missing Fundamental Harmonic Generator",
+            icon = MaterialSymbolIcon("psychology", filled = true),
+            enabled = masterConfig.psychoacousticBass.enabled,
+            onEnabledChange = { en -> onUpdate { it.copy(psychoacousticBass = it.psychoacousticBass.copy(enabled = en)) } },
             activeColor = bassColor
-        )
+        ) {
+            ViperSliderRow(
+                label = "Bass Cutoff",
+                value = masterConfig.psychoacousticBass.cutoffHz.toFloat(),
+                valueRange = 40.0f..140.0f,
+                valueFormatted = String.format(Locale.US, "%d Hz", masterConfig.psychoacousticBass.cutoffHz),
+                onValueChange = { v -> onUpdate { it.copy(psychoacousticBass = it.psychoacousticBass.copy(cutoffHz = v.toInt())) } },
+                activeColor = bassColor
+            )
 
-        ViperSliderRow(
-            label = "Harmonic Intensity",
-            value = masterConfig.psychoacousticBass.intensity * 100f,
-            valueRange = 0.0f..100.0f,
-            valueFormatted = String.format(Locale.US, "%d%%", (masterConfig.psychoacousticBass.intensity * 100).toInt()),
-            onValueChange = { v -> onUpdate { it.copy(psychoacousticBass = it.psychoacousticBass.copy(intensity = v / 100f)) } },
-            activeColor = bassColor
-        )
-
-        ViperSegmentedRow(
-            label = "Harmonic Order",
-            options = listOf("2nd", "3rd", "4th"),
-            selectedIndex = (masterConfig.psychoacousticBass.harmonicOrder - 2).coerceIn(0, 2),
-            onSelectIndex = { idx -> onUpdate { it.copy(psychoacousticBass = it.psychoacousticBass.copy(harmonicOrder = idx + 2)) } },
-            activeColor = bassColor
-        )
-    }
-
-    // 4. Dynamic System (Driver Emulation)
-    ViperSectionCard(
-        title = "Dynamic System",
-        subtitle = "Acoustic Transducer & Driver Emulation",
-        icon = MaterialSymbolIcon("graphic_eq", filled = true),
-        enabled = masterConfig.dynamicSystem.enabled,
-        onEnabledChange = { en -> onUpdate { it.copy(dynamicSystem = it.dynamicSystem.copy(enabled = en)) } },
-        activeColor = bassColor
-    ) {
-        ViperSegmentedRow(
-            label = "Transducer Preset",
-            options = listOf("Earphone", "Hi-End", "EarPods", "Extreme", "Speaker"),
-            selectedIndex = masterConfig.dynamicSystem.device.coerceIn(0, 4),
-            onSelectIndex = { idx -> onUpdate { it.copy(dynamicSystem = it.dynamicSystem.copy(device = idx)) } },
-            activeColor = bassColor
-        )
-
-        ViperSliderRow(
-            label = "Effect Strength",
-            value = masterConfig.dynamicSystem.strength * 100f,
-            valueRange = 0.0f..100.0f,
-            valueFormatted = String.format(Locale.US, "%d%%", (masterConfig.dynamicSystem.strength * 100).toInt()),
-            onValueChange = { v -> onUpdate { it.copy(dynamicSystem = it.dynamicSystem.copy(strength = v / 100f)) } },
-            activeColor = bassColor
-        )
+            ViperSliderRow(
+                label = "Harmonic Intensity",
+                value = masterConfig.psychoacousticBass.intensity * 100f,
+                valueRange = 0.0f..100.0f,
+                valueFormatted = String.format(Locale.US, "%d%%", (masterConfig.psychoacousticBass.intensity * 100).toInt()),
+                onValueChange = { v -> onUpdate { it.copy(psychoacousticBass = it.psychoacousticBass.copy(intensity = v / 100f)) } },
+                activeColor = bassColor
+            )
+        }
     }
 }
 
 /**
  * ViPER4Android Clarity & Harmonics Section
- * (ViPER Clarity, Tube Simulator, Spectrum Extension, AnalogX)
+ * (Clarity, Tube Simulator 6N1J, Spectrum Extension, AnalogX)
  */
 @Composable
 fun ViperClarityGroup(
@@ -383,7 +419,7 @@ fun ViperClarityGroup(
 
     // 1. ViPER Clarity
     ViperSectionCard(
-        title = "ViPER Clarity",
+        title = "Clarity",
         subtitle = "High-Frequency Detail & Presence",
         icon = MaterialSymbolIcon("waves", filled = true),
         enabled = masterConfig.viperClarity.enabled,
@@ -408,92 +444,96 @@ fun ViperClarityGroup(
         )
     }
 
-    // 2. Tube Simulator
-    ViperSectionCard(
-        title = "Tube Simulator",
-        subtitle = "Warm Triode 6SN7/12AX7 Harmonic Saturation",
-        icon = MaterialSymbolIcon("candlestick_chart", filled = true),
-        enabled = masterConfig.tubeSimulator.enabled,
-        onEnabledChange = { en -> onUpdate { it.copy(tubeSimulator = it.tubeSimulator.copy(enabled = en)) } },
-        activeColor = clarColor
-    ) {
-        ViperSegmentedRow(
-            label = "Tube Model",
-            options = listOf("6SN7 Triode", "12AX7 Warm", "FET Stage"),
-            selectedIndex = masterConfig.tubeSimulator.model.coerceIn(0, 2),
-            onSelectIndex = { idx -> onUpdate { it.copy(tubeSimulator = it.tubeSimulator.copy(model = idx)) } },
+    if (masterConfig.uiMode != ViperUiMode.SIMPLE) {
+        // 2. Tube Simulator (6N1J)
+        ViperSectionCard(
+            title = "Tube Simulator (6N1J)",
+            subtitle = "Warm Vacuum Tube Triode Saturation",
+            icon = MaterialSymbolIcon("candlestick_chart", filled = true),
+            enabled = masterConfig.tubeSimulator.enabled,
+            onEnabledChange = { en -> onUpdate { it.copy(tubeSimulator = it.tubeSimulator.copy(enabled = en)) } },
             activeColor = clarColor
-        )
+        ) {
+            ViperSegmentedRow(
+                label = "Tube Model",
+                options = listOf("6N1J Triode", "12AX7 Warm", "FET Stage"),
+                selectedIndex = masterConfig.tubeSimulator.model.coerceIn(0, 2),
+                onSelectIndex = { idx -> onUpdate { it.copy(tubeSimulator = it.tubeSimulator.copy(model = idx)) } },
+                activeColor = clarColor
+            )
 
-        ViperSliderRow(
-            label = "Drive Amount",
-            value = masterConfig.tubeSimulator.drive * 100f,
-            valueRange = 0.0f..100.0f,
-            valueFormatted = String.format(Locale.US, "%d%%", (masterConfig.tubeSimulator.drive * 100).toInt()),
-            onValueChange = { v -> onUpdate { it.copy(tubeSimulator = it.tubeSimulator.copy(drive = v / 100f)) } },
-            activeColor = clarColor
-        )
+            ViperSliderRow(
+                label = "Drive Amount",
+                value = masterConfig.tubeSimulator.drive * 100f,
+                valueRange = 0.0f..100.0f,
+                valueFormatted = String.format(Locale.US, "%d%%", (masterConfig.tubeSimulator.drive * 100).toInt()),
+                onValueChange = { v -> onUpdate { it.copy(tubeSimulator = it.tubeSimulator.copy(drive = v / 100f)) } },
+                activeColor = clarColor
+            )
 
-        ViperSliderRow(
-            label = "Wet / Dry Mix",
-            value = masterConfig.tubeSimulator.mix * 100f,
-            valueRange = 0.0f..100.0f,
-            valueFormatted = String.format(Locale.US, "%d%%", (masterConfig.tubeSimulator.mix * 100).toInt()),
-            onValueChange = { v -> onUpdate { it.copy(tubeSimulator = it.tubeSimulator.copy(mix = v / 100f)) } },
+            ViperSliderRow(
+                label = "Wet / Dry Mix",
+                value = masterConfig.tubeSimulator.mix * 100f,
+                valueRange = 0.0f..100.0f,
+                valueFormatted = String.format(Locale.US, "%d%%", (masterConfig.tubeSimulator.mix * 100).toInt()),
+                onValueChange = { v -> onUpdate { it.copy(tubeSimulator = it.tubeSimulator.copy(mix = v / 100f)) } },
+                activeColor = clarColor
+            )
+        }
+
+        // 3. Spectrum Extension
+        ViperSectionCard(
+            title = "Spectrum Extension",
+            subtitle = "High-Frequency Harmonic Reconstructor",
+            icon = MaterialSymbolIcon("insights", filled = true),
+            enabled = masterConfig.spectrumExtension.enabled,
+            onEnabledChange = { en -> onUpdate { it.copy(spectrumExtension = it.spectrumExtension.copy(enabled = en)) } },
             activeColor = clarColor
-        )
+        ) {
+            ViperSliderRow(
+                label = "Extension Strength",
+                value = masterConfig.spectrumExtension.strength * 100f,
+                valueRange = 0.0f..100.0f,
+                valueFormatted = String.format(Locale.US, "%d%%", (masterConfig.spectrumExtension.strength * 100).toInt()),
+                onValueChange = { v -> onUpdate { it.copy(spectrumExtension = it.spectrumExtension.copy(strength = v / 100f)) } },
+                activeColor = clarColor
+            )
+
+            ViperSliderRow(
+                label = "Exciter Amount",
+                value = masterConfig.spectrumExtension.exciter * 100f,
+                valueRange = 0.0f..100.0f,
+                valueFormatted = String.format(Locale.US, "%d%%", (masterConfig.spectrumExtension.exciter * 100).toInt()),
+                onValueChange = { v -> onUpdate { it.copy(spectrumExtension = it.spectrumExtension.copy(exciter = v / 100f)) } },
+                activeColor = clarColor
+            )
+        }
     }
 
-    // 3. Spectrum Extension
-    ViperSectionCard(
-        title = "Spectrum Extension",
-        subtitle = "High-Frequency Harmonic Reconstructor",
-        icon = MaterialSymbolIcon("insights", filled = true),
-        enabled = masterConfig.spectrumExtension.enabled,
-        onEnabledChange = { en -> onUpdate { it.copy(spectrumExtension = it.spectrumExtension.copy(enabled = en)) } },
-        activeColor = clarColor
-    ) {
-        ViperSliderRow(
-            label = "Extension Strength",
-            value = masterConfig.spectrumExtension.strength * 100f,
-            valueRange = 0.0f..100.0f,
-            valueFormatted = String.format(Locale.US, "%d%%", (masterConfig.spectrumExtension.strength * 100).toInt()),
-            onValueChange = { v -> onUpdate { it.copy(spectrumExtension = it.spectrumExtension.copy(strength = v / 100f)) } },
+    if (masterConfig.uiMode == ViperUiMode.EXPERT) {
+        // 4. AnalogX
+        ViperSectionCard(
+            title = "AnalogX",
+            subtitle = "Class-A Discrete Analog Amplifier Emulation",
+            icon = MaterialSymbolIcon("memory", filled = true),
+            enabled = masterConfig.analogX.enabled,
+            onEnabledChange = { en -> onUpdate { it.copy(analogX = it.analogX.copy(enabled = en)) } },
             activeColor = clarColor
-        )
-
-        ViperSliderRow(
-            label = "Exciter Amount",
-            value = masterConfig.spectrumExtension.exciter * 100f,
-            valueRange = 0.0f..100.0f,
-            valueFormatted = String.format(Locale.US, "%d%%", (masterConfig.spectrumExtension.exciter * 100).toInt()),
-            onValueChange = { v -> onUpdate { it.copy(spectrumExtension = it.spectrumExtension.copy(exciter = v / 100f)) } },
-            activeColor = clarColor
-        )
-    }
-
-    // 4. AnalogX
-    ViperSectionCard(
-        title = "AnalogX",
-        subtitle = "Class-A Discrete Analog Amplifier Emulation",
-        icon = MaterialSymbolIcon("memory", filled = true),
-        enabled = masterConfig.analogX.enabled,
-        onEnabledChange = { en -> onUpdate { it.copy(analogX = it.analogX.copy(enabled = en)) } },
-        activeColor = clarColor
-    ) {
-        ViperSegmentedRow(
-            label = "Warmth Level",
-            options = listOf("Subtle", "Moderate", "Warm Vintage"),
-            selectedIndex = masterConfig.analogX.mode.coerceIn(0, 2),
-            onSelectIndex = { idx -> onUpdate { it.copy(analogX = it.analogX.copy(mode = idx)) } },
-            activeColor = clarColor
-        )
+        ) {
+            ViperSegmentedRow(
+                label = "Warmth Level",
+                options = listOf("Subtle", "Moderate", "Warm Vintage"),
+                selectedIndex = masterConfig.analogX.mode.coerceIn(0, 2),
+                onSelectIndex = { idx -> onUpdate { it.copy(analogX = it.analogX.copy(mode = idx)) } },
+                activeColor = clarColor
+            )
+        }
     }
 }
 
 /**
  * ViPER4Android Soundstage & Spatial Section
- * (Field Surround, Differential Surround, Stereo Imager, Convolver IRS, Headphone Surround, Reverb, Cure Tech)
+ * (Field Surround, Differential Surround, Headphone Surround+, Reverberation, Convolver)
  */
 @Composable
 fun ViperSpatialGroup(
@@ -530,87 +570,10 @@ fun ViperSpatialGroup(
         )
     }
 
-    // 2. Differential Surround
+    // 2. Convolver (IRS)
     ViperSectionCard(
-        title = "Differential Surround",
-        subtitle = "Haas-Effect Phase Delay",
-        icon = MaterialSymbolIcon("spatial_audio", filled = true),
-        enabled = masterConfig.diffSurround.enabled,
-        onEnabledChange = { en -> onUpdate { it.copy(diffSurround = it.diffSurround.copy(enabled = en)) } },
-        activeColor = spatColor
-    ) {
-        ViperSliderRow(
-            label = "Surround Delay",
-            value = masterConfig.diffSurround.delayMs,
-            valueRange = 1.0f..20.0f,
-            valueFormatted = String.format(Locale.US, "%.1f ms", masterConfig.diffSurround.delayMs),
-            onValueChange = { v -> onUpdate { it.copy(diffSurround = it.diffSurround.copy(delayMs = v)) } },
-            activeColor = spatColor
-        )
-
-        ViperSliderRow(
-            label = "Wet / Dry Mix",
-            value = masterConfig.diffSurround.wetDryMix * 100f,
-            valueRange = 0.0f..100.0f,
-            valueFormatted = String.format(Locale.US, "%d%%", (masterConfig.diffSurround.wetDryMix * 100).toInt()),
-            onValueChange = { v -> onUpdate { it.copy(diffSurround = it.diffSurround.copy(wetDryMix = v / 100f)) } },
-            activeColor = spatColor
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text = "Reverse Phase", style = MaterialTheme.typography.bodyMedium)
-            Switch(
-                checked = masterConfig.diffSurround.reversePhase,
-                onCheckedChange = { chk -> onUpdate { it.copy(diffSurround = it.diffSurround.copy(reversePhase = chk)) } }
-            )
-        }
-    }
-
-    // 3. Stereo Imager (3-Band)
-    ViperSectionCard(
-        title = "Stereo Imager",
-        subtitle = "3-Band Frequency-Split Width",
-        icon = MaterialSymbolIcon("aspect_ratio", filled = true),
-        enabled = masterConfig.stereoImager.enabled,
-        onEnabledChange = { en -> onUpdate { it.copy(stereoImager = it.stereoImager.copy(enabled = en)) } },
-        activeColor = spatColor
-    ) {
-        ViperSliderRow(
-            label = "Low Band Width (Bass)",
-            value = masterConfig.stereoImager.lowWidth,
-            valueRange = 0.0f..2.0f,
-            valueFormatted = String.format(Locale.US, "%.1fx", masterConfig.stereoImager.lowWidth),
-            onValueChange = { v -> onUpdate { it.copy(stereoImager = it.stereoImager.copy(lowWidth = v)) } },
-            activeColor = spatColor
-        )
-
-        ViperSliderRow(
-            label = "Mid Band Width (Vocals)",
-            value = masterConfig.stereoImager.midWidth,
-            valueRange = 0.0f..2.0f,
-            valueFormatted = String.format(Locale.US, "%.1fx", masterConfig.stereoImager.midWidth),
-            onValueChange = { v -> onUpdate { it.copy(stereoImager = it.stereoImager.copy(midWidth = v)) } },
-            activeColor = spatColor
-        )
-
-        ViperSliderRow(
-            label = "High Band Width (Air)",
-            value = masterConfig.stereoImager.highWidth,
-            valueRange = 0.0f..2.0f,
-            valueFormatted = String.format(Locale.US, "%.1fx", masterConfig.stereoImager.highWidth),
-            onValueChange = { v -> onUpdate { it.copy(stereoImager = it.stereoImager.copy(highWidth = v)) } },
-            activeColor = spatColor
-        )
-    }
-
-    // 4. IRS Convolver
-    ViperSectionCard(
-        title = "Convolver (IRS)",
-        subtitle = "Hardware & Room Impulse Response",
+        title = "Convolver",
+        subtitle = "Hardware & Room Impulse Response (IRS)",
         icon = MaterialSymbolIcon("settings_input_component", filled = true),
         enabled = masterConfig.convolver.enabled,
         onEnabledChange = { en -> onUpdate { it.copy(convolver = it.convolver.copy(enabled = en)) } },
@@ -635,7 +598,7 @@ fun ViperSpatialGroup(
         )
     }
 
-    // 5. Reverberation
+    // 3. Reverberation
     ViperSectionCard(
         title = "Reverberation",
         subtitle = "Algorithmic Acoustic Reverb",
@@ -661,76 +624,53 @@ fun ViperSpatialGroup(
             onValueChange = { v -> onUpdate { it.copy(reverberation = it.reverberation.copy(wet = v / 100f)) } },
             activeColor = spatColor
         )
-
-        ViperSliderRow(
-            label = "Damping",
-            value = masterConfig.reverberation.damp * 100f,
-            valueRange = 0.0f..100.0f,
-            valueFormatted = String.format(Locale.US, "%d%%", (masterConfig.reverberation.damp * 100).toInt()),
-            onValueChange = { v -> onUpdate { it.copy(reverberation = it.reverberation.copy(damp = v / 100f)) } },
-            activeColor = spatColor
-        )
     }
 
-    // 6. Cure Tech (Auditory Protection Crossfeed)
+    // 4. Headphone Surround+ (VHS+)
     ViperSectionCard(
-        title = "Cure Tech",
-        subtitle = "Fatigue Protection & Headphone Crossfeed",
-        icon = MaterialSymbolIcon("health_and_safety", filled = true),
-        enabled = masterConfig.cureCrossfeed.enabled,
-        onEnabledChange = { en -> onUpdate { it.copy(cureCrossfeed = it.cureCrossfeed.copy(enabled = en)) } },
+        title = "Headphone Surround+",
+        subtitle = "Binaural Headphone Spatial Virtualizer",
+        icon = MaterialSymbolIcon("headphones", filled = true),
+        enabled = masterConfig.headphoneSurround.enabled,
+        onEnabledChange = { en -> onUpdate { it.copy(headphoneSurround = it.headphoneSurround.copy(enabled = en)) } },
         activeColor = spatColor
     ) {
         ViperSegmentedRow(
-            label = "Crossfeed Level",
-            options = listOf("Slight", "Moderate", "High"),
-            selectedIndex = masterConfig.cureCrossfeed.preset.coerceIn(0, 2),
-            onSelectIndex = { idx -> onUpdate { it.copy(cureCrossfeed = it.cureCrossfeed.copy(preset = idx)) } },
+            label = "Surround Quality",
+            options = listOf("Level 1 (Standard)", "Level 2 (VHS+)"),
+            selectedIndex = masterConfig.headphoneSurround.quality.coerceIn(0, 1),
+            onSelectIndex = { idx -> onUpdate { it.copy(headphoneSurround = it.headphoneSurround.copy(quality = idx)) } },
             activeColor = spatColor
         )
     }
 
-    // 7. Dynamic EQ
-    ViperSectionCard(
-        title = "Dynamic EQ",
-        subtitle = "Volume-Dependent Adaptive Equalization",
-        icon = MaterialSymbolIcon("tune", filled = true),
-        enabled = masterConfig.dynamicEq.enabled,
-        onEnabledChange = { en -> onUpdate { it.copy(dynamicEq = it.dynamicEq.copy(enabled = en)) } },
-        activeColor = spatColor
-    ) {
-        ViperSliderRow(
-            label = "Bass Band Gain (80Hz)",
-            value = masterConfig.dynamicEq.band1GainDb,
-            valueRange = -12.0f..12.0f,
-            valueFormatted = String.format(Locale.US, "%+.1f dB", masterConfig.dynamicEq.band1GainDb),
-            onValueChange = { v -> onUpdate { it.copy(dynamicEq = it.dynamicEq.copy(band1GainDb = v)) } },
+    if (masterConfig.uiMode == ViperUiMode.EXPERT) {
+        // 5. Differential Surround
+        ViperSectionCard(
+            title = "Diffrential Surround",
+            subtitle = "Haas-Effect Phase Delay",
+            icon = MaterialSymbolIcon("spatial_audio", filled = true),
+            enabled = masterConfig.diffSurround.enabled,
+            onEnabledChange = { en -> onUpdate { it.copy(diffSurround = it.diffSurround.copy(enabled = en)) } },
             activeColor = spatColor
-        )
+        ) {
+            ViperSliderRow(
+                label = "Surround Delay",
+                value = masterConfig.diffSurround.delayMs,
+                valueRange = 1.0f..20.0f,
+                valueFormatted = String.format(Locale.US, "%.1f ms", masterConfig.diffSurround.delayMs),
+                onValueChange = { v -> onUpdate { it.copy(diffSurround = it.diffSurround.copy(delayMs = v)) } },
+                activeColor = spatColor
+            )
 
-        ViperSliderRow(
-            label = "Treble Band Gain (8kHz)",
-            value = masterConfig.dynamicEq.band3GainDb,
-            valueRange = -12.0f..12.0f,
-            valueFormatted = String.format(Locale.US, "%+.1f dB", masterConfig.dynamicEq.band3GainDb),
-            onValueChange = { v -> onUpdate { it.copy(dynamicEq = it.dynamicEq.copy(band3GainDb = v)) } },
-            activeColor = spatColor
-        )
-    }
-
-    // 8. Speaker Optimization
-    ViperSectionCard(
-        title = "Speaker Optimization",
-        subtitle = "Distortion Reduction & Subsonic Filter",
-        icon = MaterialSymbolIcon("speaker_phone", filled = true),
-        enabled = masterConfig.speakerOpt.enabled,
-        onEnabledChange = { en -> onUpdate { it.copy(speakerOpt = it.speakerOpt.copy(enabled = en)) } },
-        activeColor = spatColor
-    ) {
-        Text(
-            text = "Applies high-pass subsonic filtering and resonance notch filters to reduce speaker cone distortion and protect hardware.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+            ViperSliderRow(
+                label = "Wet / Dry Mix",
+                value = masterConfig.diffSurround.wetDryMix * 100f,
+                valueRange = 0.0f..100.0f,
+                valueFormatted = String.format(Locale.US, "%d%%", (masterConfig.diffSurround.wetDryMix * 100).toInt()),
+                onValueChange = { v -> onUpdate { it.copy(diffSurround = it.diffSurround.copy(wetDryMix = v / 100f)) } },
+                activeColor = spatColor
+            )
+        }
     }
 }

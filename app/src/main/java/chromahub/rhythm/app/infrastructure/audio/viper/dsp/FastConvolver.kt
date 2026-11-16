@@ -103,7 +103,7 @@ class FastConvolver {
         historyIndex = 0
     }
 
-    inline fun process(left: Float, right: Float, crossChannel: Float): Pair<Float, Float> {
+    fun process(left: Float, right: Float, crossChannel: Float): Pair<Float, Float> {
         val size = kernel.size
         historyL[historyIndex] = left
         historyR[historyIndex] = right
