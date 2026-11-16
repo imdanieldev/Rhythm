@@ -8,6 +8,8 @@ package chromahub.rhythm.app.infrastructure.audio.viper
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import androidx.core.content.edit
 import chromahub.rhythm.app.util.AudioDeviceManager
 import chromahub.rhythm.app.util.GsonUtils
@@ -46,13 +48,25 @@ class ViperSettingsRepository private constructor(private val context: Context) 
 
     init {
         // Monitor audio device changes to auto-switch profile if enabled
-        val audioDeviceManager = AudioDeviceManager.getInstance(context)
+        val audioDeviceManager = AudioDeviceManager(context)
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         scope.launch {
-            audioDeviceManager.devices.collect { _ ->
+            audioDeviceManager.availableDevices.collect { _ ->
                 if (_configFlow.value.autoDeviceProfileEnabled) {
+                    val isBt = audioDeviceManager.isBluetoothActive()
+                    val isHeadset = audioManager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.any {
+                        it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                        it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                    } == true
+                    val isUsb = audioManager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.any {
+                        it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                        it.type == AudioDeviceInfo.TYPE_USB_HEADSET
+                    } == true
+
                     val detectedDevice = when {
-                        audioDeviceManager.isBluetoothActive() -> ViperOutputDevice.BLUETOOTH
-                        audioDeviceManager.isHeadsetConnected() -> ViperOutputDevice.HEADSET
+                        isBt -> ViperOutputDevice.BLUETOOTH
+                        isUsb -> ViperOutputDevice.USB
+                        isHeadset -> ViperOutputDevice.HEADSET
                         else -> ViperOutputDevice.SPEAKER
                     }
                     if (detectedDevice != _configFlow.value.activeOutputDevice) {
@@ -377,7 +391,7 @@ class ViperSettingsRepository private constructor(private val context: Context) 
             putBoolean("pab_enabled", c.psychoacousticBass.enabled)
             putInt("pab_cutoff", c.psychoacousticBass.cutoffHz)
             putFloat("pab_intensity", c.psychoacousticBass.intensity)
-            putFloat("pab_order", c.psychoacousticBass.harmonicOrder)
+            putInt("pab_order", c.psychoacousticBass.harmonicOrder)
             putFloat("pab_orig", c.psychoacousticBass.originalLevel)
 
             // Stereo Imager

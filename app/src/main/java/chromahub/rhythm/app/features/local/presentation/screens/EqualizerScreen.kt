@@ -1490,7 +1490,7 @@ fun EqualizerScreen(
                             Tab(
                                 selected = isSelected,
                                 onClick = {
-                                    HapticUtils.performHapticFeedback(context, haptics, HapticType.SELECTION)
+                                    HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                                     selectedViperTabName = title
                                 },
                                 text = {

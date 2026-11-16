@@ -38,9 +38,8 @@ class ViperAudioProcessor : RhythmAudioProcessor() {
             if (cfg.fireEqualizer.enabled) count++
             if (cfg.viperDdc.enabled) count++
             if (cfg.viperBass.enabled) count++
-            if (cfg.viperBass.subBassEnabled) count++
-            if (cfg.viperBass.bassMonoEnabled) count++
-            if (cfg.viperBass.psychoacoustics) count++
+            if (cfg.bassMono.enabled) count++
+            if (cfg.psychoacousticBass.enabled) count++
             if (cfg.spectrumExtension.enabled) count++
             if (cfg.viperClarity.enabled) count++
             if (cfg.tubeSimulator.enabled) count++
@@ -52,7 +51,7 @@ class ViperAudioProcessor : RhythmAudioProcessor() {
             if (cfg.stereoImager.enabled) count++
             if (cfg.cureCrossfeed.enabled) count++
             if (cfg.reverberation.enabled) count++
-            if (cfg.speakerOptimization.enabled) count++
+            if (cfg.speakerOpt.enabled) count++
             if (cfg.masterGate.limiterEnabled) count++
             return count
         }

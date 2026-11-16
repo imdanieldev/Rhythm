@@ -69,7 +69,7 @@ fun ViperSectionCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
-                        HapticUtils.performHapticFeedback(context, haptics, HapticType.SELECTION)
+                        HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                         isExpanded = !isExpanded
                     }
             ) {
@@ -217,7 +217,7 @@ fun ViperSegmentedRow(
                 val isSelected = selectedIndex == index
                 OutlinedButton(
                     onClick = {
-                        HapticUtils.performHapticFeedback(context, haptics, HapticType.SELECTION)
+                        HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                         onSelectIndex(index)
                     },
                     modifier = Modifier.weight(1f),
